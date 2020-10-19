@@ -9,7 +9,7 @@ It's encouraged to hack Phalanx by yourself,  to know the principle behind is th
 Place the 'phalanx' folder under your Python working directory,  then you can import it as a normal package.
 
 ## package requirement
-numpy
+numpy  
 networkx
 
 ## _what is a quantum annealer?_
