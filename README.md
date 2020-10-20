@@ -10,7 +10,7 @@ Place the 'phalanx' folder under your Python working directory,  then you can im
 
 ## package requirement
 numpy  
-networkx
+networkx  
 matplotlib
 
 ## _what is a quantum annealer?_
