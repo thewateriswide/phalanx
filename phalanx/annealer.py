@@ -14,10 +14,19 @@ z_gate = np.array([[1,  0], [0, -1]])
 class Annealer(object):
     '''Class for simulating a quantum annealer.  
     
-    A quantum annealer is a system stays at the ground state of its Hamiltonian. 
-    The topology of the annealer is a simple undirected graph.  Its structure 
-    is determined by its Hamiltonian.  The vertexes are qubits.  The 
-    Hamiltonian governs it is of normal Ising model type,
+    A quantum annealer is a system evolves to a so-called Gibbs state during 
+    an annealing process.  The Gibbs state is a distribution according to its
+    Hamiltonian,
+    
+        exp(-b*E)
+        
+    corresponds to the wheight for an eigenstate with eigenvalue E in this 
+    distribution.  Here b is a parameter characterizes the environment,  named as 
+    inverse temperature.
+
+    In our model,  an annealer is made of many qubits.  It can be viewed as a
+    simple undirected graph.  Its structure determines its Hamiltonian.  The 
+    vertexes are qubits.  The Hamiltonian is of normal Ising model type,
 
         A[i,j]*Z_i*Z_j + B[i]*Z_i,
 
@@ -27,26 +36,42 @@ class Annealer(object):
 
     Example:
 
-        To create an instance:
-            anl = Annealer(number_of_qubits)
-        To set a connection:
+        Create an instance:
+            anl = Annealer(beta, number_of_qubits)
+        A large beta means low temperature, often leads to a narrow distribution.
+
+        Set a connection:
             connect = [
                 [1,2,3], 
                 [0,2,4],
                 [0,0,3]]
             anl.set_connection(connect)
-        To check the connection graph:
+
+        Check the connection graph:
             anl.draw_topology()
-        To measure the final state of the annealing process:
+
+        Check the Hamiltonian:
+            anl.hamiltonian
+
+        Check the eigenvalues of the Hamiltonian:
+            anl.eigenvalue
+
+        Check the eigenstates of the Hamiltonian:
+            anl.eigenstate
+
+        Get a measurement of the final state of the annealing process:
             anl.measure()
-        To have a graphic view for result of measurement:
+
+        Get a graphic view for result of measurement:
             anl.draw_result()
     '''
 
-    def __init__(self, number_of_qubits):
+    def __init__(self, beta, number_of_qubits):
         '''Create an annealer object. 
 
         -IN:
+            beta --- Inverse temperature of the annealer.
+                type: float
             number_of_qubits --- Number of qubits in the annealer.
                 type: integer
 
@@ -59,16 +84,20 @@ class Annealer(object):
                 type: networkx.Graph
             self.hamiltonian --- Hamiltonian matrix.
                 type: numpy.array of float.
-            self.groundstate --- Ground state(s) of the Hamiltonian
-                type: numpy.array of complex.
+            self.eigenvalue --- Eigenvalues of the Hamiltonian.
+                type: 1D numpy.array of float.
+            self.eigenstate --- Eigenstates of the Hamiltonian.
+                type: 2x2 numpy.array of complex.
             self.result --- Qubits configuration after a measurement.
                 type: List of integers. 0 for up, 1 for down.
         '''
+        self.beta = beta
         self.number_of_qubits = number_of_qubits
         self.graph = nx.Graph()
         self.connection = None
         self.hamiltonian = None
-        self.groundstate = None
+        self.eigenvalue = None
+        self.eigenstate = None
         self.result = None
         return None
         
@@ -98,8 +127,10 @@ class Annealer(object):
                 type: networkx.Graph
             self.hamiltonian --- Hamiltonian matrix.
                 type: numpy.array of float.
-            self.groundstate --- Ground state(s) of the Hamiltonian
-                type: numpy.array of complex.
+            self.eigenvalue --- Eigenvalues of the Hamiltonian.
+                type: 1D numpy.array of float.
+            self.eigenstate --- Eigenstates of the Hamiltonian.
+                type: 2x2 numpy.array of complex.
         '''
         # Modify the size of the input connection matrix to fit the annealer.
         tmp = np.array(connection)
@@ -145,14 +176,9 @@ class Annealer(object):
                     term_cpl = self.connection[i, j] * term_cpl
                     self.hamiltonian += term_cpl
 
-        # Search for ground state(s) of the Hamiltonian.
-        self.groundstate = []
-        eigenvalue, eigenstate = np.linalg.eig(self.hamiltonian)
-        min_val = np.min(eigenvalue)
-        for i in range(len(eigenvalue)):
-            if eigenvalue[i] == min_val:
-                self.groundstate.append(eigenstate[:, i])
-        self.groundstate = np.array(self.groundstate)
+        # Calculate the eigenvalues and eigenstates of the Hamiltonian.
+        # Each column of self.eigenstate is an eigenstate.
+        self.eigenvalue, self.eigenstate = np.linalg.eig(self.hamiltonian)
         return None
 
     def draw_topology(self):
@@ -166,32 +192,35 @@ class Annealer(object):
     def measure(self):
         '''Give out a measurement of the qubits on the annealer. 
 
-        This returns a basis accorrding to the ground state of the annealer.
+        The annealer stays at the so-called Gibbs state,  when we try to capture 
+        it,  we capture an eigenmode of it,  this eigenmode collapses to an
+        observation basis which is the final result we see.
 
         -INFLUENCED:
             self.result --- Qubits configuration after a measurement.
-                type: List of integers. 0 for up, 1 for down.
+                type: List of integers. 1 for up, -1 for down.
 
         -RETURN:
             --- A configuration list of qubits.
-                type: List of integers. 0 for up, 1 for down.
+                type: List of integers. 1 for up, -1 for down.
         '''
-        # Since there could have many ground states.  A final state of the annealer
-        # could be a superposition of them, which we have no further information to
-        # distinguish.  So we just randomly pick one as the final state.
-        groundstate = self.groundstate[np.random.choice(range(self.groundstate.shape[0]))]
+        # Pick up an eigenstate, there is no guarantee it is normalized.
+        prob = np.exp(-1.0 * self.beta * self.eigenvalue)
+        prob = prob / sum(prob)
+        eigenstate = self.eigenstate[:, np.random.choice(range(self.eigenstate.shape[0]), p=prob)]  # Pick up a column.
 
-        # Probabilites for groundstate collapsing to an observation basis.
+        # Probabilites for eigenstate collapsing to an observation basis.
         prob = np.zeros(2**self.number_of_qubits)
         for i in range(2**self.number_of_qubits):
-            prob[i] = np.abs(groundstate[i])**2
+            prob[i] = np.abs(eigenstate[i])**2
+        prob = prob / sum(prob)
 
         # Pick a basis as the measurement, and return it.
         idx = np.random.choice(np.arange(2**self.number_of_qubits), p = prob)
-        form = '0%db' % self.number_of_qubits
+        form = '0%db' % self.number_of_qubits  # Here uses basis like |00> as the first one.
         result = list(format(idx, form))
         for i in range(self.number_of_qubits):
-            result[i] = int(result[i])
+            result[i] = 1 - 2*int(result[i])  # Here uses basis like |11> as the first one.
         self.result = result
         return result
 
@@ -201,7 +230,7 @@ class Annealer(object):
         from matplotlib.pyplot import show
         color_map = []
         for i in self.graph.nodes:
-            if self.result[i] == 1:
+            if self.result[i] == -1:
                 color_map.append('#B0C4DE')  # Color for down.
             else:
                 color_map.append('#4682B4')  # Color for up.
